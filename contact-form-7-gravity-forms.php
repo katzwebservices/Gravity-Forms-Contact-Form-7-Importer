@@ -2,13 +2,13 @@
 /*
 Plugin Name: Gravity Forms Contact Form 7 Importer
 Plugin URI: http://www.katzwebservices.com
-Description: Import your existing Contact Form 7 forms into <a href="http://wordpressformplugin.com?r=gfcf7">Gravity Forms</a>.
+Description: Import your existing Contact Form 7 forms into <a href="http://formplugin.com?r=gfcf7">Gravity Forms</a>.
 Author: Katz Web Services, Inc.
-Version: 1.0.2
+Version: 2.0
 Author URI: http://www.katzwebservices.com
 
 ------------------------------------------------------------------------
-Copyright 2011 Katz Web Services, Inc.
+Copyright 2015 Katz Web Services, Inc.
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,48 +26,122 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 */
 
-add_action( 'plugins_loaded', 'gfcf7_init' );
-
-function gfcf7_init() {
-	if(is_admin()) {
-		global $GFCF7_Import;
-		$GFCF7_Import = new GFCF7_Import();
-	}
-}
-
 class GFCF7_Import {
 
-	var $posts = array ();
+	static $instance;
+	var $posts = array();
 	var $file;
+	var $xml;
 
-	function header() { ?>
+	/**
+	 * The HTML of the CF7 form
+	 * @var string
+	 */
+	var $form = '';
+
+
+	function __construct() {
+		global $pagenow;
+
+		if( !is_admin() ) { return; }
+
+		add_filter("gform_addon_navigation", array('GFCF7_Import', 'create_gf_menu') );
+
+		add_action('init', array('GFCF7_Import', 'init') );
+
+	}
+
+	static function init() {
+
+		/**
+		 * Set up internationalization support.
+		 */
+		load_plugin_textdomain( 'gfcf7', false,  dirname( plugin_basename( __FILE__ ) ).'/languages/' );
+
+
+		require_once(ABSPATH.'wp-admin/includes/import.php');
+
+		if( function_exists('register_importer') ) {
+			register_importer('gfcf7', __('Contact Form 7 &rarr; Gravity Forms', "gfcf7"), __('Import Contact Form 7 forms into Gravity Forms.', "gfcf7"), array ('GFCF7_Import', 'dispatch'));
+		}
+	}
+
+	/**
+	 * Add menu link to Gravity Forms menu
+	 * @param $menus
+	 *
+	 * @return array
+	 */
+	static function create_gf_menu($menus){
+
+		// Adding submenu if user has access
+		$permission = current_user_can('manage_options');
+
+		if(!empty($permission)) {
+			$menus[] = array(
+				"name" => "gfcf7",
+				"label" => __("CF7 Import", "gfcf7"),
+				"callback" =>  array("GFCF7_Import", "dispatch"),
+				"permission" => $permission
+			);
+		}
+
+		return $menus;
+	}
+
+	/**
+	 * @return GFCF7_Import
+	 */
+	static function getInstance() {
+		if( empty( self::$instance ) ) {
+			self::$instance = new GFCF7_Import;
+		}
+
+		return self::$instance;
+	}
+
+	/**
+	 * @param
+	 */
+	public function setForm( $form ) {
+		self::getInstance()->form = $form;
+	}
+
+	/**
+	 * @param string XML
+	 */
+	public function setXML( $xml ) {
+		self::getInstance()->xml = $xml;
+	}
+
+	static function header() { ?>
 		<div class="wrap">
 		<img alt="<?php _e("Gravity Forms", "gfcf7") ?>" src="<?php echo self::get_base_url()?>/images/gravity-import-icon-32.png" style="float:left; margin:15px 7px 0 0;" width="36" height="35"/>
-		<h2><?php _e('Import a Contact Form 7 Form to Gravity Forms'); ?></h2>
+		<h2><?php esc_html_e('Import a Contact Form 7 Form to Gravity Forms', 'gfcf7'); ?></h2>
 		<div class="clear"></div>
 	<?php
 	}
 
-	function footer() {
+	static function footer() {
 		echo '</div>';
 	}
 
-	function unhtmlentities($string) { // From php.net for < 4.3 compat
+	static function unhtmlentities($string) { // From php.net for < 4.3 compat
 		$trans_tbl = get_html_translation_table(HTML_ENTITIES);
 		$trans_tbl = array_flip($trans_tbl);
 		return strtr($string, $trans_tbl);
 	}
 
 	//Returns the url of the plugin's root folder
-    protected function get_base_url(){
+    protected static function get_base_url(){
         return plugins_url(null, __FILE__);
     }
 
-	function greet() {
-			self::kwd_import_upload_form(add_query_arg(array('step' => 1)));
+	static function greet() {
+		self::import_upload_form(add_query_arg(array('step' => 1)));
 	}
 
-	function get_settings($field) {
+	static function get_settings($field) {
 		$values = '';
 		foreach ( $field['options'] as $key => $setting ) {
 			$option = explode(':', $setting);
@@ -94,7 +168,18 @@ class GFCF7_Import {
 		return $field;
 	}
 
-	function update_field_types_and_ids($field, $id) {
+	/**
+	 * Analyze the CF7 field types to generate Gravity Forms field settings for input numbers and field types
+	 *
+	 * @param $field
+	 * @param $id
+	 *
+	 * @return array
+	 */
+	static function update_field_types_and_ids($field, $id) {
+
+		$useid = $id;
+
 		switch($field['type']) {
 			// Names
 			case 'prefix': 		$field['type'] = 'name'; 		$useid = $id.'.2'; break;
@@ -109,12 +194,17 @@ class GFCF7_Import {
 			case 'state': 		$field['type'] = 'address';		$useid = $id.'.4'; break;
 			case 'zip': 		$field['type'] = 'address';		$useid = $id.'.5'; break;
 			case 'country': 	$field['type'] = 'address';		$useid = $id.'.6'; break;
-			default: 			$useid = $id; break;
+
+			case 'tel':
+				$field['type'] = 'phone';
+				$field['phoneFormat'] = 'standard';
+				break;
 		}
+
 		return array($field, $useid);
 	}
 
-	function getLabel($label) {
+	static function getLabel($label) {
 		if(isset($label['parsedLabelBefore']) && !empty($label['parsedLabelBefore'])) {
 			return trim(rtrim($label['parsedLabelBefore']));
 		} elseif(isset($field['labels'][0])) {
@@ -123,119 +213,137 @@ class GFCF7_Import {
 		return '';
 	}
 
-	function get_forms() {
-		global $wpdb, $wpcf7_shortcode_manager, $GFCF7_Import;
+	static function get_forms() {
+		global $wpdb, $wpcf7_shortcode_manager;
 
 		if(!function_exists('wpcf7_contact_form')) {
 			echo '<div class="error" id="message">';
-			_e(wpautop('You need to have Contact Form 7 installed and activated for this importer to work.'));
+			echo wpautop( __('You need to have Contact Form 7 installed and activated for this importer to work.', "gfcf7") );
 			echo '</div>';
 			return false;
 		}
 
-		$GFCF7_Import->form = $form = wpcf7_contact_form($_POST['cf7form']);
+		$form = wpcf7_contact_form( intval( $_POST['cf7form'] ) );
 
-		$parselabels = isset($_POST['parselabels']);
-		$combinefields = isset($_POST['combinefields']);
+		// Get
+		$properties = $form->get_properties();
 
-		#$form->notification = $form->mail;
-			$form->notification['to'] = $form->mail['recipient'];
-			$form->notification['message'] = $form->mail['body'];
-			$form->notification['subject'] = $form->mail['subject'];
-			$form->notification['from'] = $form->mail['sender'];
-			$form->notification['disableAutoformat'] = !empty($form->mail['use_html']);
+		$gf_form = new StdClass;
 
-		#$form->autoResponder = $form->mail_2;
-			$form->autoResponder['toField'] = $form->mail_2['recipient'];
-			$form->autoResponder['message'] = $form->mail_2['body'];
-			$form->autoResponder['subject'] = $form->mail_2['subject'];
-			$form->autoResponder['from'] = $form->mail_2['sender'];
-			$form->autoResponder['disableAutoformat'] = !empty($form->mail_2['use_html']);
+		$gf_form->title = $form->title();
+		$gf_form->messages = $form->prop('messages');
 
-		$WPCF7 = new WPCF7_ContactForm();
-		$form->fields = $wpcf7_shortcode_manager->scan_shortcode($form->form);
+		$gf_form->notification = array(
+			'to' => $properties['mail']['recipient'],
+			'message' => $properties['mail']['body'],
+			'subject' => $properties['mail']['subject'],
+			'from' => $properties['mail']['sender'],
+			'disableAutoformat' => !empty($properties['mail']['use_html']),
+		);
 
-		$form->formCode = $form->form;
+		$gf_form->autoResponder = array(
+			'toField' => $properties['mail_2']['recipient'],
+			'message' => $properties['mail_2']['body'],
+			'subject' => $properties['mail_2']['subject'],
+			'from' => $properties['mail_2']['sender'],
+			'disableAutoformat' => !empty($properties['mail_2']['use_html']),
+		);
 
-		foreach($form->fields as $key => $field) {
-			if(strpos($field['type'], '*')) {
-				$form->fields["{$key}"]['isRequired'] = 1;
-			} else {
-				$form->fields["{$key}"]['isRequired'] = false;
+		$gf_form->fields = $form->form_scan_shortcode(); //$wpcf7_shortcode_manager->scan_shortcode($form->form);
+
+		$gf_form->formCode = $properties['form'];
+
+		foreach($gf_form->fields as $key => $field) {
+
+			// Just get the button text from the submit field
+			if( $field['type'] === 'submit') {
+				$gf_form->buttonText = $field['values'][0];
+				unset( $gf_form->fields[ $key ] );
+				continue;
 			}
+
+			// Required fields end in an asterisk
+			$field['isRequired'] = ( substr( $field['type'], -1, 1 ) === '*' ) ? 1 : false;
 
 			$field['type'] = str_replace('*', '', $field['type']);
 			$field['name'] = isset($field['name']) ? $field['name'] : '';
-#			echo $field['type'].'<br />';
 			$field['originalType'] = $field['type'];
 			$field['type'] = self::get_field_type($field['type'], $field['name']);
-#			echo $form->fields["{$key}"]['type'].'<br />';
 			$field['defaultValue'] = (isset($field['values']) && isset($field['values'][0])) ? $field['values'][0] : false;
 
-			$form->fields["{$key}"] = self::get_settings($field);
+			$gf_form->fields["{$key}"] = self::get_settings($field);
 
-			unset($form->fields["{$key}"]['pipes']);
+			unset($gf_form->fields["{$key}"]['pipes']);
 
-			if($form->fields["{$key}"]['type'] == 'submit') {
-				$form->buttonText = $field['values'][0];
-			}
-
-			if($parselabels) {
+			if( isset( $_POST['parselabels'] ) ) {
 				$regex = '/((.*)(?:\s+)?\[(?:.*?)'.$field['name'].'(?:.*?)\](.*))/im';
-				preg_match($regex, $form->formCode, $matches);
+				preg_match($regex, $gf_form->formCode, $matches);
 				if(!empty($matches)) {
-					$form->fields["{$key}"]['parsedLabelBefore'] = strip_tags($matches[2], '<b><strong><em><i><span><u>');
-					$form->fields["{$key}"]['parsedLabelAfter'] = strip_tags($matches[3], '<b><strong><em><i><span><u>');
-					$form->formCode = preg_replace($regex, '', $form->formCode);
+					$gf_form->fields["{$key}"]['parsedLabelBefore'] = strip_tags($matches[2], '<b><strong><em><i><span><u>');
+					$gf_form->fields["{$key}"]['parsedLabelAfter'] = strip_tags($matches[3], '<b><strong><em><i><span><u>');
+					$gf_form->formCode = preg_replace($regex, '', $gf_form->formCode);
 				}
 			}
 		}
 
-		unset($form->mail, $form->mail_2);
+		unset($mail, $mail_2);
 
-		#print_r($form);
+		$xml = self::generate_xml( $gf_form, $form );
 
-$xml = <<<EOD
+		self::getInstance()->setXML( $xml );
+		self::getInstance()->setForm( $form );
+
+		return;
+	}
+
+	private static function generate_xml( $gf_form, $form ) {
+
+		$combinefields = isset($_POST['combinefields']);
+
+		$messages = $form->prop( 'messages' );
+
+		$xml = <<<EOD
 <?xml version="1.0" encoding="UTF-8"?>
 <forms version="1.5.2.8">
 	<form labelPlacement="top_label" useCurrentUserAsAuthor="1">
-		<title><![CDATA[{$form->title}]]></title>
+		<title><![CDATA[{$form->title()}]]></title>
 		<description><![CDATA[]]></description>
 		<confirmation type="message">
-			<message><![CDATA[{$form->messages['mail_sent_ok']}]]></message>
+			<message><![CDATA[{$messages['mail_sent_ok']}]]></message>
 		</confirmation>
 		<button type="text">
-			<text><![CDATA[{$form->buttonText}]]></text>
+			<text><![CDATA[{$gf_form->buttonText}]]></text>
 		</button>
 		<fields>
 EOD;
+
 		$xml .= "\n\t\t"; $id = 1;
-		$form->addresses = $form->names = 0;
-		foreach($form->fields as $field) {
+		$gf_form->addresses = $gf_form->names = 0;
+		foreach($gf_form->fields as $field) {
 
 			list($field, $useid) = self::update_field_types_and_ids($field, $id);
 
 			if($field['type'] == 'address') {
-				$form->addresses++;
-				if($combinefields && $form->addresses > 1) { continue; }
+				$gf_form->addresses++;
+				if($combinefields && $gf_form->addresses > 1) { continue; }
 			}
 			if($field['type'] == 'name') {
-				$form->names++;
-				if($combinefields && $form->names > 1) { continue; }
+				$gf_form->names++;
+				if($combinefields && $gf_form->names > 1) { continue; }
 			}
 
 			$xml .= "<field id='{$useid}' size='medium' allowsPrepopulate='1'";
-				if($field['type']  == 'acceptance') {
-					$xml .= " type='checkbox'";
-				} elseif($field['type']  == 'checkbox' && isset($field['options']['exclusive'])) {
-					$field['type'] = 'radio';
-					$xml .= " type='radio'"; // Exclusive checkboxes != checkboxes. No idea why they have this option.
-				} else {
-					$xml .= " type='{$field['type']}'";
-				}
-				$xml .= (isset($field['isRequired']) || $field['type']  == 'acceptance') ? " isRequired='1'" : '';
-				$xml .= ($field['type'] == 'captcha') ? " displayOnly='1'" : '';
-				$xml .= ($field['type'] == 'phone') ? " phoneFormat='standard'" : '';
+			if($field['type']  == 'acceptance') {
+				$xml .= " type='checkbox'";
+			} elseif($field['type']  == 'checkbox' && isset($field['options']['exclusive'])) {
+				$field['type'] = 'radio';
+				$xml .= " type='radio'"; // Exclusive checkboxes != checkboxes. No idea why they have this option.
+			} else {
+				$xml .= " type='{$field['type']}'";
+			}
+			$xml .= (isset($field['isRequired']) || $field['type']  == 'acceptance') ? " isRequired='1'" : '';
+			$xml .= ($field['type'] == 'captcha') ? " displayOnly='1'" : '';
+			$xml .= ($field['type'] == 'phone') ? " phoneFormat='standard'" : '';
 			$xml .= ">\n\t\t";
 
 			if(isset($field['options']['class'])) {
@@ -287,7 +395,7 @@ EOD;
 				case 'captcha':
 					$xml .= "\t<label><![CDATA[{$label}]]></label>\n\t\t";
 					$xml .= "\t<captchaTheme><![CDATA[Red]]></captchaTheme>\n\t\t";
-					$xml .= "\t<errorMessage><![CDATA[{$form->messages['captcha_not_match']}]]></errorMessage>\n\t\t";
+					$xml .= "\t<errorMessage><![CDATA[{$messages['captcha_not_match']}]]></errorMessage>\n\t\t";
 					break;
 				case 'address':
 				case 'name':
@@ -302,45 +410,50 @@ EOD;
 
 			$xml .= "</field>\n\t\t";
 
-		$id++;
+			$id++;
 
 		}
 
 		$xml .= "</fields>\n\t";
 
 		$notification = '';
-		if(!empty($form->notification) && !empty($form->notification['to'])) {
+		if(!empty($gf_form->notification) && !empty($gf_form->notification['to'])) {
 			$notification .= "\t<notification>
-				<to><![CDATA[{$form->notification['to']}]]></to>
-				<from><![CDATA[{$form->notification['from']}]]></from>
-				<subject><![CDATA[{$form->notification['subject']}]]></subject>
-				<message><![CDATA[{$form->notification['message']}]]></message>";
-			if(!empty($form->notification['disableAutoformat'])) {
+				<to><![CDATA[{$gf_form->notification['to']}]]></to>
+				<from><![CDATA[{$gf_form->notification['from']}]]></from>
+				<subject><![CDATA[{$gf_form->notification['subject']}]]></subject>
+				<message><![CDATA[{$gf_form->notification['message']}]]></message>";
+			if(!empty($gf_form->notification['disableAutoformat'])) {
 				$notification .= "\n\t\t\t<disableAutoformat><![CDATA[1]]></disableAutoformat>";
 			}
 			$notification .= "\n\t\t</notification>\n\t";
 		}
 
-		if(!empty($form->autoResponder) && !empty($form->autoResponder['toField'])) {
+		if(!empty($gf_form->autoResponder) && !empty($gf_form->autoResponder['toField'])) {
 			$notification .= "\t<autoResponder>
-				<toField><![CDATA[{$form->autoResponder['toField']}]]></toField>
-				<from><![CDATA[{$form->autoResponder['from']}]]></from>
-				<subject><![CDATA[{$form->autoResponder['subject']}]]></subject>
-				<message><![CDATA[{$form->autoResponder['message']}]]></message>";
-			if(!empty($form->autoResponder['disableAutoformat'])) {
+				<toField><![CDATA[{$gf_form->autoResponder['toField']}]]></toField>
+				<from><![CDATA[{$gf_form->autoResponder['from']}]]></from>
+				<subject><![CDATA[{$gf_form->autoResponder['subject']}]]></subject>
+				<message><![CDATA[{$gf_form->autoResponder['message']}]]></message>";
+			if(!empty($gf_form->autoResponder['disableAutoformat'])) {
 				$notification .= "\n\t\t\t<disableAutoformat><![CDATA[1]]></disableAutoformat>";
 			}
 			$notification .= "\n\t\t</autoResponder>\n\t";
 		}
 
+		// replace the CF7 field name shortcode with the Gravity Forms merge tags
 		$id = 1;
-		foreach($form->fields as $field) {
-			if(empty($field['name'])) { continue; }
-			$label = isset($field['labels'][0]) ? $field['labels'][0] : '';
+		foreach($gf_form->fields as $field) {
 
-			list($field, $useid) = self::update_field_types_and_ids($field, $id);
+			if( empty( $field['name'] ) ) {
+				continue;
+			}
 
-			$notification = str_replace("[{$field['name']}]", "{{$label}:{$id}}", $notification);
+			$label = self::getLabel( $field );
+
+			list($use_field, $useid) = self::update_field_types_and_ids($field, $id);
+
+			$notification = str_replace("[{$use_field['name']}]", "{{$label}:{$id}}", $notification);
 
 			$id++;
 		}
@@ -349,12 +462,7 @@ EOD;
 
 		$xml .= "</form>\n</forms>";
 
-
-		$GFCF7_Import->xml = $xml;
-		$GFCF7_Import->form = $form;
-
-		return;
-
+		return $xml;
 	}
 
 	public static function get_field_type($type = '', $name = ''){
@@ -363,6 +471,10 @@ EOD;
 		$temp = $the_label = strtolower($name);
 
 		switch(trim($type)) {
+			case 'captchar':
+			case 'captchac':
+				return 'captcha';
+				break;
 			case 'quiz':
 				return 'captcha';
 				break;
@@ -380,6 +492,12 @@ EOD;
 			case 'textarea':
 			case 'description':
 				return 'textarea';
+				break;
+			case 'tel':
+				return 'phone';
+				break;
+			case 'url':
+				return 'website';
 				break;
 			case 'file':
 				return 'fileupload';
@@ -423,7 +541,7 @@ EOD;
 		return $label;
     }
 
-	private function cleanup(&$forms){
+	static private function cleanup(&$forms){
         unset($forms["version"]);
 
         //adding checkboxes "inputs" property based on "choices". (they were removed from the export
@@ -456,8 +574,8 @@ EOD;
         return $forms;
     }
 
-	function import_forms() {
-		global $GFCF7_Import;
+	static function import_forms() {
+
 		require_once(GFCommon::get_base_path()."/export.php");
 		require_once(GFCommon::get_base_path()."/xml.php");
 
@@ -470,21 +588,20 @@ EOD;
 			"input"=> array("unserialize_as_array" => true),
 			"routing_item"=> array("unserialize_as_array" => true),
 			"routin"=> array("unserialize_as_array" => true) //routin is for backwards compatibility
-			);
+		);
 
 		$xml = new RGXML($options);
 
-		$forms = $xml->unserialize($GFCF7_Import->xml);
+		$forms = $xml->unserialize( self::getInstance()->xml );
 
-        if(!$forms)
-            return 0;   //Error. could not unserialize XML file
-#        else if(version_compare($forms["version"], GFExport::$min_import_version, "<"))
-#            return -1;  //Error. XML version is not compatible with current Gravity Forms version
+        if(!$forms) {
+	        return 0;   //Error. could not unserialize XML file
+        }
 
         //cleaning up generated object
         $forms = self::cleanup($forms);
 
-        foreach($forms as $key => $form){
+		foreach($forms as $key => $form){
             $title = $form["title"];
             $count = 2;
             while(!RGFormsModel::is_unique_title($title)){
@@ -500,16 +617,20 @@ EOD;
             $form["id"] = $form_id;
             RGFormsModel::update_form_meta($form_id, $form);
         }
-        $form['addresses'] = $GFCF7_Import->form->addresses;
-        $form['names'] = $GFCF7_Import->form->names;
+        $form['addresses'] = self::getInstance()->form->addresses;
+        $form['names'] = self::getInstance()->form->names;
+
         return $form;
 
 	}
 
-	function import() {
-		global $GFCF7_Import;
+	/**
+	 * Handle the import process. Calls
+	 */
+	static function import() {
+
 		if(empty($_POST['cf7form'])) {
-			_e(sprintf('%sYou must choose a form. %sReturn to previous page.%s%s', '<p>', '<a href="'.admin_url('admin.php?import=gfcf7').'">', '</a>', '</p>'));
+			printf( __('%sYou must choose a form. %sReturn to previous page.%s%s', 'gfcf7'), '<p>', '<a href="'.admin_url('admin.php?import=gfcf7').'">', '</a>', '</p>' );
 			return;
 		}
 
@@ -523,6 +644,7 @@ EOD;
 			return $result;
 
 		do_action('import_done', 'gfcf7');
+
 		echo '<h3>';
 
 		if(isset($result['id']) && isset($result['title'])) {
@@ -553,14 +675,17 @@ EOD;
 				<h3 style="margin-bottom:0.5em;">'.__('Import notes:', "gfcf7").'</h3>
 				<ul class="ul-disc">';
 			foreach($notices as $notice) {
-				echo '<li>'.$notice.'</li>';
+				echo '<li>'.esc_html( $notice ).'</li>';
 			}
 			echo '</ul>
 			</div>';
 		}
 	}
 
-	function dispatch() {
+	/**
+	 * Handle the Import Form submission
+	 */
+	static function dispatch() {
 		if (empty ($_POST['cf7form']))
 			$step = 0;
 		else
@@ -584,12 +709,12 @@ EOD;
 	}
 
 
-	function kwd_import_upload_form( $action ) {
+	static function import_upload_form( $action ) {
 		global $wpdb, $wpcf7;
 
 		if(!function_exists('wpcf7_contact_form')) {
 			echo '<div class="error" id="message">';
-			_e(wpautop('You need to have Contact Form 7 installed and activated for this importer to work.'));
+			echo wpautop( __('You need to have Contact Form 7 installed and activated for this importer to work.', 'gfcf7' ) );
 			echo '</div>';
 			return false;
 		}
@@ -597,21 +722,21 @@ EOD;
 		$forms = array();
 
 		// Version 3 changes everything…jeez!
-		if(function_exists('wpcf7_convert_to_cpt')) {
-			$results = get_posts('post_type=wpcf7_contact_form&numberposts=100000000');
-			foreach($results as $row) {
-				$forms[$row->ID] = maybe_unserialize($row->post_title);
-			}
-		} else {
-			// Get CF7 Forms
-			$query = $wpdb->prepare( "SELECT * FROM $wpcf7->contactforms");
+		if( !function_exists('wpcf7_convert_to_cpt') ) {
+			_doing_it_wrong( 'GFCF7_Import::import_upload_form()', __('You are using an older version of Contact Form 7. Please upgrade to CF7 3.0 or higher', 'gfcf7'), '2.0' );
+			return false;
+		}
 
-			if ( ! $results = $wpdb->get_results( $query ) )
-				return false; // No data
+		$results = WPCF7_ContactForm::find();
 
-			foreach($results as $row) {
-				$forms["{$row->cf7_unit_id}"] = maybe_unserialize($row->title);
-			}
+		if( empty( $results ) ) {
+			echo '<h3>'.esc_html__("There are no Contact Form 7 forms to import.", 'gfcf7').'</h3>';
+
+			return false;
+		}
+
+		foreach($results as $row) {
+			$forms[ $row->id() ] = maybe_unserialize( $row->title() );
 		}
 
 
@@ -619,8 +744,8 @@ EOD;
 
 		$output .= '
 		<form id="kws-import-upload-form" method="post" action="'.esc_attr($action).'">
-			<fieldset class="alignleft" style="width:30%; margin-right:15px">
-				<h3>'.__('Choose the Contact Form 7 form to import', "gfcf7").'</h3>
+			<fieldset class="alignleft">
+				<h2>'.__('Choose the Contact Form 7 form to import', "gfcf7").'</h2>
 				<label for="cf7form">'.__('This form will be imported into Gravity Forms as a new form:', "gfcf7").'
 				<select name="cf7form" id="cf7form" style="display:block;">
 					<option value="0">'.__("Select a Contact Form 7 Form", "gfcf7").'</option>';
@@ -637,14 +762,14 @@ EOD;
 			<div class="clear">
 			'.wp_nonce_field('import-upload','_wpnonce',true, false).'
 			</div>
-			<p><label for="parselabels"><input type="checkbox" name="parselabels" id="parselabels" checked="checked" /> '.__('Attempt to parse input labels from form HTML code.', "gfcf7").'</label>
-			<span class="howto">'.__(sprintf('If you uncheck this, inputs will be imported based only on the tags inside your Contact Form 7 form code (such as %s[text text-45 "This will be the label used."]%s', '<code>', '</code>')).'</span>
+			<p><label for="parselabels"><input type="checkbox" name="parselabels" id="parselabels" checked="checked" /> '.esc_html__('Attempt to parse input labels from form HTML code.', "gfcf7").'</label>
+			<span class="howto">'.sprintf( __('If you uncheck this, inputs will be imported based only on the tags inside your Contact Form 7 form code (such as %s[text text-45 "This will be the label used."]%s', 'gfcf7'),  '<code>', '</code>') .'</span>
 			</p>
 			<p><label for="combinefields"><input type="checkbox" name="combinefields" id="combinefields" checked="checked" /> '.__('Combine Name & Address fields', "gfcf7").'</label>
 			<span class="howto">'.__('Street, City, ZIP, etc. will be combined into one Address input. First name and last name will be one Name field.', "gfcf7").'</span>
 			</p>
 			<div class="submit">
-				<input type="submit" class="button" value="'.__( 'Import from Contact Form 7' ).'" />
+				<input type="submit" class="button button-large button-primary" value="'.esc_attr__( 'Import from Contact Form 7', 'gfcf7' ).'" />
 			</div>
 		</form>
 		';
@@ -652,33 +777,6 @@ EOD;
 		echo $output;
 	}
 
-	function GFCF7_Import() {
-		global $pagenow;
-
-		add_filter("gform_addon_navigation", 'gfcf7_create_menu');
-
-		add_action('init', create_function('', 'load_plugin_textdomain(\'gfcf7\');') );
-
-		function gfcf7_create_menu($menus){
-
-			// Adding submenu if user has access
-			$permission = current_user_can("level_7");
-
-			if(!empty($permission)) {
-				$menus[] = array("name" => "gfcf7", "label" => __("<acronym title='Contact Form 7'>CF7</acronym> Import", "gfcf7"), "callback" =>  array("GFCF7_Import", "dispatch"), "permission" => $permission);
-			}
-
-			return $menus;
-		}
-
-		require_once(ABSPATH.'wp-admin/includes/import.php');
-
-		if(function_exists('register_importer')) {
-			register_importer('gfcf7', __('Contact Form 7 &rarr; Gravity Forms', "gfcf7"), __('Import Contact Form 7 forms into Gravity Forms.', "gfcf7"), array ('GFCF7_Import', 'dispatch'));
-		}
-
-
-
-	}
 }
-?>
+
+GFCF7_Import::getInstance();

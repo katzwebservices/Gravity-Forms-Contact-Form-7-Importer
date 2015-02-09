@@ -1,0 +1,136 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Gravity Forms Contact Form 7 Importer\n"
+"POT-Creation-Date: 2015-02-08 17:36-0700\n"
+"PO-Revision-Date: 2015-02-08 17:36-0700\n"
+"Last-Translator: Katz Web Services, Inc. <support@katz.co>\n"
+"Language-Team: Katz Web Services, Inc. <support@katz.co>\n"
+"Language: en_US\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: Poedit 1.7.1\n"
+"X-Poedit-Basepath: ..\n"
+"X-Poedit-SourceCharset: UTF-8\n"
+"X-Poedit-KeywordsList: __;_e;_n:1,2;_x:1,2c;_ex:1,2c;_nx:4c,1,2;esc_attr__;"
+"esc_attr_e;esc_attr_x:1,2c;esc_html__;esc_html_e;esc_html_x:1,2c;_n_noop:1,2;"
+"_nx_noop:3c,1,2;__ngettext_noop:1,2\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Poedit-SearchPath-0: .\n"
+
+#: contact-form-7-gravity-forms.php:72
+msgid "Contact Form 7 &rarr; Gravity Forms"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:72
+msgid "Import Contact Form 7 forms into Gravity Forms."
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:90
+msgid "CF7 Import"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:126
+msgid "Gravity Forms"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:127
+msgid "Import a Contact Form 7 Form to Gravity Forms"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:237 contact-form-7-gravity-forms.php:726
+msgid ""
+"You need to have Contact Form 7 installed and activated for this importer to "
+"work."
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:642
+#, php-format
+msgid "%sYou must choose a form. %sReturn to previous page.%s%s"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:661
+#, php-format
+msgid ""
+"The form &ldquo;%s&rdquo; was imported. %sEdit in Gravity Forms &rarr;%s"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:664
+#, php-format
+msgid "Form imported. %sView all forms%s"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:670
+#, php-format
+msgid "Your form had %s address fields that were combined."
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:672
+#, php-format
+msgid ""
+"Your form had %s address fields. You will likely need to remove or combine "
+"them."
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:677
+#, php-format
+msgid "Your form had %s name fields that were combined."
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:679
+#, php-format
+msgid ""
+"Your form had %s name fields. You will likely need to remove or combine them."
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:684
+msgid "Import notes:"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:735
+msgid ""
+"You are using an older version of Contact Form 7. Please upgrade to CF7 3.0 "
+"or higher"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:742
+msgid "There are no Contact Form 7 forms to import."
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:757
+msgid "Choose the Contact Form 7 form to import"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:758
+msgid "This form will be imported into Gravity Forms as a new form:"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:760
+msgid "Select a Contact Form 7 Form"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:774
+msgid "Attempt to parse input labels from form HTML code."
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:775
+#, php-format
+msgid ""
+"If you uncheck this, inputs will be imported based only on the tags inside "
+"your Contact Form 7 form code (such as %s[text text-45 \"This will be the "
+"label used.\"]%s"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:777
+msgid "Combine Name & Address fields"
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:778
+msgid ""
+"Street, City, ZIP, etc. will be combined into one Address input. First name "
+"and last name will be one Name field."
+msgstr ""
+
+#: contact-form-7-gravity-forms.php:781
+msgid "Import from Contact Form 7"
+msgstr ""
